@@ -16,7 +16,7 @@ try:
 except Exception:  # pragma: no cover
     OpenAI = None
 
-APP_VERSION = "V18.2.7"
+APP_VERSION = "V18.2.8"
 TITLE_LIMIT = 75
 HIGHLIGHT_LIMIT = 125
 HIGHLIGHT_IDEAL_MIN = 95
@@ -155,7 +155,7 @@ section[data-testid="stExpander"] { background:#0f172a!important; border:1px sol
 .length-card .v { color:#f8fafc!important; font-size:22px; font-weight:900; line-height:1.1; }
 .length-card .hint { color:#e5e7eb!important; font-size:12px; margin-top:3px; }
 .export-warning { background:#451a1a; border:2px solid #ef4444; border-radius:12px; padding:10px 12px; margin:8px 0; color:#fee2e2!important; font-weight:800; }
-/* V18.2.6: force any accidental markdown/code/debug blocks to follow dark theme. */
+/* V18.2.8: force any accidental markdown/code/debug blocks to follow dark theme. */
 pre, code, .stMarkdown pre, .stMarkdown code, [data-testid="stCodeBlock"], [data-testid="stCodeBlock"] pre, [data-testid="stCodeBlock"] code { background:#0f172a!important; color:#f8fafc!important; border-color:#334155!important; }
 .stMarkdown pre, [data-testid="stCodeBlock"] pre { border:1px solid #334155!important; border-radius:10px!important; padding:8px 10px!important; white-space:pre-wrap!important; }
 textarea, input, div[contenteditable="true"] { background:#0f172a!important; color:#f8fafc!important; -webkit-text-fill-color:#f8fafc!important; }
@@ -700,7 +700,7 @@ def compressed_master_text(refresh: bool = False) -> str:
     def names(tier):
         return "、".join(x[1] for x in cc.get(tier, [])) or "无"
     txt = f"""
-压缩母版（V18.2.6，多国语言只传这个，不再传完整旧文案）：
+压缩母版（V18.2.8，多国语言只传这个，不再传完整旧文案）：
 品牌：{st.session_state.get('brand','Alpinaluz')}
 SKU/EAN：{st.session_state.get('sku','')} / {st.session_state.get('ean','')}
 ES已确认短标题：{current_es_title() if 'current_es_title' in globals() else st.session_state.get('selected_es_title','')}
@@ -722,7 +722,7 @@ C级降级到五点/描述：{names('C')}
 - 禁止 halogen/halógena/halogène、incandescent/incandescente、Edison、traditional/tradicional、standard bulb。
 - 灯泡兼容只写 LED + 灯头 + 最大功率 + 灯泡不包含。
 - 不确认的信息不写。
-- 木材安全：未明确确认天然木时，不要把 madera/wood/front wood 自动升级为 natural wood / madera natural / Naturholz。
+- 木材表达：Alpinaluz 默认不要过度纠结天然木；除非资料明确写 MDF、仿木、热转印木纹、wood effect、efecto madera、imitation wood 等，否则可按 wood/madera/bois/legno/madeira/Holz 正常表达。
 - 商品亮点建议写满95-115字符，不要只写70-80字符；优先承载材质、核心尺寸、调节、开关和场景；如果确认有开关，商品亮点必须出现本地化“开关/Schalter/switch/interrupteur”等表达。
 """.strip()
     st.session_state["compressed_master_cache"] = txt
@@ -884,15 +884,34 @@ def product_has_wood_reference() -> bool:
     ]).lower()
     return any(term.lower() in blob for term in WOOD_GENERIC_TERMS + NATURAL_WOOD_TERMS)
 
+def wood_effect_or_mdf_confirmed() -> bool:
+    """Only downgrade wood wording when the input explicitly says MDF / imitation / wood-effect / thermal-transfer etc.
+    For Alpinaluz, ordinary wood wording should not be over-policed.
+    """
+    fc = st.session_state.get("fact_card", {}) or {}
+    blob = " ".join([
+        str(fc.get("materials", "")), str(fc.get("colors", "")), str(fc.get("key_structure", "")),
+        str(fc.get("core_selling_points", "")), str(fc.get("must_keep_in_titles", "")), str(fc.get("notes_for_copy", "")),
+        str(st.session_state.get("tech_notes", "")), str(st.session_state.get("manual_title", "")),
+        str(st.session_state.get("manual_description", "")),
+    ]).lower()
+    terms = [
+        "mdf", "wood effect", "wood-effect", "imitation wood", "faux wood", "madera efecto", "efecto madera",
+        "imitación madera", "imitacion madera", "bois effet", "effet bois", "holzoptik", "effetto legno",
+        "efeito madeira", "houtlook", "efekt drewna", "trälook", "traelook", "热转印", "热转印木纹", "仿木", "木纹效果", "贴皮"
+    ]
+    return any(t in blob for t in terms)
+
 
 def sanitize_unconfirmed_natural_wood_text(text: str, lang: str = "") -> str:
     """Hard post-process: never upgrade generic wood to natural/solid wood unless explicitly confirmed."""
     if not text:
         return ""
     t = str(text)
-    if natural_wood_confirmed():
+    if natural_wood_confirmed() or not wood_effect_or_mdf_confirmed():
         return clean_text(t)
 
+    # Only when MDF/wood-effect/imitation is explicitly confirmed, downgrade natural wood wording.
     # Phrase-level replacements first. Keep a usable local expression such as "wood front" / "façade bois".
     replacements = [
         # ES
@@ -1220,8 +1239,8 @@ ES轻量资料补充（只限ES阶段使用）：
 {source_brief_light()}
 
 输出 JSON 数组，每个元素只保留这些字段，避免浪费 output token：
-{{"title":"75字符以内西班牙短标题", "zh":"标题自然中文解释，给新手看", "highlight":"95-115字符最佳、125字符以内商品亮点", "highlight_zh":"商品亮点自然中文解释，给新手看", "risk_code":"ok / too_long / grammar_check / missing_core / material_risk"}}
-必须输出 zh 和 highlight_zh。中文解释要自然完整，不要关键词堆叠，不要重复词。只输出 JSON。
+{{"title":"75字符以内西班牙短标题", "zh":"标题中文审核说明：简洁但完整，说明产品类型、关键规格/材质/灯头/风险点", "highlight":"95-115字符最佳、125字符以内商品亮点", "highlight_zh":"商品亮点中文审核说明：说明亮点主打什么、包含哪些关键参数、是否漏核心卖点", "risk_code":"ok / too_long / grammar_check / missing_core / material_risk"}}
+必须输出 zh 和 highlight_zh。中文解释要精简但完整，不强制字数，不要关键词堆叠，不要重复词，不要漏产品类型/材质/灯头/尺寸/风险判断等关键审核点。只输出 JSON。
 """
 
 
@@ -1229,7 +1248,7 @@ def lang_title_prompt(lang: str, instruction: str = "") -> str:
     es_title = st.session_state.get("confirmed_titles", {}).get("ES", "") or st.session_state.get("selected_es_title", "")
     return f"""请为 {LANGS[lang]['market']} 生成 3 个本地语言标题候选，语言必须是 {LANGS[lang]['native']}。
 
-V18.2.6省token模式：只使用压缩母版 + ES人工意图 + 事实卡，不再重复传完整旧文案。
+V18.2.8压缩输入模式：只使用压缩母版 + ES人工意图 + 事实卡，不再重复传完整旧文案。
 
 本国语言规则：
 {title_rules_compact(lang)}
@@ -1247,22 +1266,23 @@ V18.2.6省token模式：只使用压缩母版 + ES人工意图 + 事实卡，不
 {compressed_master_text()}
 
 输出 JSON 数组，每个元素只保留这些字段，避免浪费 output token：
-{{"title":"75字符以内{LANGS[lang]['native']}短标题", "zh":"标题自然中文解释，给新手看", "highlight":"95-115字符最佳、125字符以内商品亮点", "highlight_zh":"商品亮点自然中文解释，给新手看", "risk_code":"ok / too_long / grammar_check / missing_core / material_risk"}}
-必须输出 zh 和 highlight_zh。中文解释要自然完整，不要关键词堆叠，不要重复词。只输出 JSON。
+{{"title":"75字符以内{LANGS[lang]['native']}短标题", "zh":"标题中文审核说明：简洁但完整，说明产品类型、关键规格/材质/灯头/风险点", "highlight":"95-115字符最佳、125字符以内商品亮点", "highlight_zh":"商品亮点中文审核说明：说明亮点主打什么、包含哪些关键参数、是否漏核心卖点", "risk_code":"ok / too_long / grammar_check / missing_core / material_risk"}}
+必须输出 zh 和 highlight_zh。中文解释要精简但完整，不强制字数，不要关键词堆叠，不要重复词，不要漏产品类型/材质/灯头/尺寸/风险判断等关键审核点。只输出 JSON。
 """
 
 
 def batch_lang_title_prompt(langs: List[str]) -> str:
     es_title = st.session_state.get("confirmed_titles", {}).get("ES", "") or st.session_state.get("selected_es_title", "")
     lang_rules = "\n".join([f"{l}: {title_rules_compact(l)}" for l in langs])
-    schema = {l: [{"title": f"75字符以内{LANGS[l]['native']}短标题", "highlight": "95-115字符最佳、125字符以内商品亮点", "risk_code": "ok / too_long / grammar_check / missing_core / material_risk"}] for l in langs}
+    schema = {l: [{"title": f"75字符以内{LANGS[l]['native']}短标题", "zh": "标题中文审核说明，精简但完整", "highlight": "95-115字符最佳、125字符以内商品亮点", "highlight_zh": "商品亮点中文审核说明，精简但完整", "risk_code": "ok / too_long / grammar_check / missing_core / material_risk"}] for l in langs}
     return f"""请为多个 Amazon 国家站一次性生成首轮标题候选。每个国家生成 3 个标题候选。
 
-V18.2.6省token模式：本步骤只允许使用压缩母版，不再读取完整旧文案。请本地化重写，不要机器直译。
+V18.2.8压缩输入模式：本步骤只允许使用压缩母版，不再读取完整旧文案。请本地化重写，不要机器直译。
 
 通用要求：
 - 每个国家必须使用对应本地语言。
 - 标题必须继承 ES 已确认意图，但短标题不能超过75字符。
+- 每个候选必须输出 zh 和 highlight_zh；中文说明要精简但完整，方便新手截图给主管看，不能只写几个关键词。
 - 商品亮点≤125字符，目标95-115字符；补足标题放不下的信息，优先材质、核心尺寸/底座、调节角度、开关和使用场景，避免和标题机械重复。
 - 传统长标题≤200字符，仅作历史兼容参考。
 - 灯泡安全：禁止 halogen/卤素、incandescent/白炽、Edison、traditional/tradicional、standard bulb 等词。
@@ -1289,7 +1309,7 @@ def listing_prompt(lang: str, include_aplus: bool = True) -> str:
     title = st.session_state.get("confirmed_titles", {}).get(lang, "")
     return f"""请生成 {LANGS[lang]['market']} Listing 正文，语言必须是 {LANGS[lang]['native']}。
 
-V18.2.6正文省token模式：只使用确认后的事实卡、压缩母版、ES人工意图和已确认标题/亮点，不再重复传原始旧文案。
+V18.2.8正文模式：只使用确认后的事实卡、压缩母版、ES人工意图和已确认标题/亮点，不再重复传原始旧文案。
 
 关键规则：
 - Title 必须完全使用我提供的“已确认短标题”，不得修改、不得缩短、不得重写。
@@ -1299,8 +1319,13 @@ V18.2.6正文省token模式：只使用确认后的事实卡、压缩母版、ES
 - 灯泡表述采用平台安全模板：只写“兼容对应灯头的 LED 灯泡，最大功率 XW，灯泡不包含”。
 - 全文绝对禁止出现 halogen/halógena/halogène/卤素、incandescent/incandescente/白炽、Edison、traditional/tradicional、standard bulb 等高风险灯泡词。
 - 未确认的信息不要写；不要自动写 no tiene/no incluye/no es 等负面清单，除非灯泡不包含、IP/室内限制或人工明确要求。
-- 木材安全：只有事实卡明确确认天然木/原木，才写 natural wood / madera natural / Naturholz 等；否则使用 wood front / frontal de madera / Holzfront 等保守表达。
+- 木材表达：不要过度降级。除非事实卡/人工资料明确写 MDF、仿木、热转印木纹、wood effect、efecto madera、imitation wood、wood-effect 等，否则可按木质/天然木常规表达；若明确是仿木/木纹效果，才写 wood effect / efecto madera / Holzoptik。
 - 五点格式要像 Amazon 最常见的自然格式："自然卖点短标题: 具体说明"。
+- 五点顺序必须按产品类型固定，不要自由乱排：
+  * 吊灯/吸顶吊灯/pendant/suspension/pendelleuchte：1设计风格/主视觉卖点；2材质工艺/灯罩质感；3尺寸/组合安装/高度调节；4灯头兼容/功率/灯泡不含；5使用场景/安装方式/IP。
+  * 壁灯/aplique/wall light：1设计风格/主视觉卖点；2功能结构（开关、插头、可调角度、旋转）；3材质和尺寸；4灯头兼容/功率/灯泡不含；5使用场景/安装方式/室内外。
+  * 吸顶灯/LED灯：1光效/外观；2功率/流明/色温；3材质/尺寸；4安装方式/适用空间；5IP/安全/注意事项。
+- 中文解释不是逐字翻译，而是“审核说明”：精简但完整，不强制字数；必须说明这条标题/亮点/五点在讲什么、是否覆盖关键事实、有没有明显平台风险。
 
 正文生成上下文：
 {body_context_text(lang)}
@@ -1308,15 +1333,15 @@ V18.2.6正文省token模式：只使用确认后的事实卡、压缩母版、ES
 输出 JSON：
 {{
   "title": "必须原样等于已确认短标题",
-  "title_zh": "短标题自然中文解释，给新手审核",
+  "title_zh": "短标题中文审核说明，精简但完整，说明产品类型、关键规格、材质/外观、灯头/功能和风险判断",
   "item_highlights": "必须原样等于已确认商品亮点",
-  "item_highlights_zh": "商品亮点自然中文解释，给新手审核",
+  "item_highlights_zh": "商品亮点中文审核说明，说明主打卖点、包含参数和是否漏核心信息",
   "legacy_title": "传统200字符以内标题参考",
   "legacy_title_zh": "传统标题自然中文解释",
   "bullets": ["5条"],
-  "bullets_zh": ["对应5条五点的自然中文解释，必须5条"],
+  "bullets_zh": ["对应5条五点的中文审核说明，必须5条；每条说明该卖点主打什么，不要只做短翻译"],
   "description": "长描述",
-  "description_zh": "长描述中文摘要，2-4句，给新手审核",
+  "description_zh": "长描述中文审核摘要，精简说明产品定位、关键参数、场景和风险点",
   "search_terms": "250字符以内，不重复品牌，不加标点堆砌",
   "search_terms_zh": "搜索词中文解释",
   "aplus": [{{"module":1,"title":"","body":"","image_prompt_zh":""}}]
@@ -1429,8 +1454,8 @@ ES人工意图记录：
 {intent_prompt_text()}
 
 输出 JSON 数组，每个元素只保留这些字段：
-{{"title":"75字符以内{LANGS[lang]['native']}短标题", "zh":"标题自然中文解释", "highlight":"95-115字符最佳、125字符以内商品亮点", "highlight_zh":"商品亮点自然中文解释", "risk_code":"ok / too_long / grammar_check / missing_core / material_risk"}}
-必须输出 zh 和 highlight_zh，中文解释要自然完整，不要关键词堆叠。只输出 JSON。"""
+{{"title":"75字符以内{LANGS[lang]['native']}短标题", "zh":"标题中文审核说明，精简但完整", "highlight":"95-115字符最佳、125字符以内商品亮点", "highlight_zh":"商品亮点中文审核说明，精简但完整", "risk_code":"ok / too_long / grammar_check / missing_core / material_risk"}}
+必须输出 zh 和 highlight_zh，中文解释要精简但完整，不强制字数，不要关键词堆叠，不要漏关键审核点。只输出 JSON。"""
 
 def maybe_auto_compress_candidates(lang: str, cands: List[Dict[str, str]], label_prefix: str) -> List[Dict[str, str]]:
     """If all candidates are over budget, ask the model once for compressed versions.
@@ -2378,7 +2403,7 @@ def render_candidate_cards(cands: List[Dict[str, str]], lang: str, prefix: str, 
         recognized = recognized_concepts_summary((title or "") + " " + (highlight or ""))
         rec_html = f"<div class='concept-ok'>规则识别：✓ {safe_html_text(recognized)}</div>" if recognized else ""
         legacy_html = f"<div class='small-muted'><b>传统200字标题参考（{ln}/200）：</b>{safe_html_text(legacy_title)}</div><div class='small-muted'>中文：{safe_html_text(legacy_zh)}</div>" if legacy_title else ""
-        # V18.2.7: newbie-first card. Default view shows only what a new operator needs
+        # V18.2.8: newbie-first card. Default view shows only what a new operator needs
         # to confirm; all supervisor/debug details stay folded to avoid visual noise.
         with st.container(border=True):
             st.caption(f"候选{i+1} · {' / '.join(badges)} · 短标题 {n}/{TITLE_LIMIT} · 亮点 {hn}/{HIGHLIGHT_LIMIT}")
@@ -2548,9 +2573,9 @@ def listing_zh_is_good(data: Dict[str, Any]) -> bool:
         if "、" in t and not any(p in t for p in "。；，适合采用带配备支持方便用于可"):
             return False
         return has_cjk(t)
-    if not good_sentence(data.get("title_zh")):
+    if not good_sentence(data.get("title_zh"), 16):
         return False
-    if not good_sentence(data.get("item_highlights_zh")):
+    if not good_sentence(data.get("item_highlights_zh"), 16):
         return False
     bzh = data.get("bullets_zh") or []
     if not isinstance(bzh, list) or len([x for x in bzh if good_sentence(x, 6)]) < 5:
@@ -2675,7 +2700,7 @@ def make_zip() -> bytes:
                 z.writestr(f"listing/{lang}_Listing.txt", listing_to_text(lang, data))
             elif data:
                 skipped.append(f"{lang}: " + "；".join(listing_validation_errors(data)))
-        readme = f"Alpinaluz Listing Generator {APP_VERSION}\n只导出完整 listing 文件。V18.2.6 会拦截空正文/五点不完整/Search Terms为空/A+不足5个模块的国家，并执行 Natural Wood 硬规则，避免上传空文件。默认生成完整自然中文解释，方便新手审核；如主模型输出不完整，会自动用 5.4-mini 补齐。\n"
+        readme = f"Alpinaluz Listing Generator {APP_VERSION}\n只导出完整 listing 文件。V18.2.8 固定五点顺序模板，中文解释精简但完整，不新增上报卡，保留新手截图流程；明确仿木/MDF/机器编织时才降级材质表达。\n"
         if skipped:
             readme += "\n以下国家因正文不完整未导出：\n" + "\n".join(skipped) + "\n"
             z.writestr("_INCOMPLETE_SKIPPED.txt", "\n".join(skipped))
@@ -2693,7 +2718,7 @@ with st.sidebar:
     st.number_input("图片事实识别最多张数", min_value=0, max_value=6, value=3, step=1, key="image_limit", help="建议最多3张：主图、尺寸图、关键细节图。")
     st.checkbox("生成完成声音提示", value=True, key="sound_notify")
     st.checkbox("新手模式：AI自动推荐标题", value=True, key="newbie_auto_title", help="默认只显示AI推荐标题，其他候选折叠到高级区。")
-    st.checkbox("V18.2.7：多国只用压缩母版", value=True, key="use_compressed_master", help="多国语言标题和正文不再重复传完整旧文案。")
+    st.checkbox("V18.2.8：多国只用压缩母版", value=True, key="use_compressed_master", help="多国语言标题和正文不再重复传完整旧文案。")
     st.checkbox("正文生成跳过已生成国家", value=True, key="skip_existing_listings", help="已经生成过正文的国家不会重复烧 token，除非先删除/取消。")
     st.checkbox("生成完整中文解释（默认开启，给主管审核用）", value=True, key="generate_listing_zh", help="默认开启：每个国家生成自然中文解释，方便不会外语的同事审核；不要为了省这点 token 影响使用。")
     st.markdown("---")
@@ -2730,7 +2755,7 @@ with st.sidebar:
 
 # ------------------------- header -------------------------
 st.title(f"Alpinaluz Listing Generator {APP_VERSION}")
-st.markdown("<div class='info-card'>新流程：①资料与事实卡 → ②ES标题确认 → ③AI预审多国标题 → ④绿色批量确认/黄色人工检查 → ⑤统一生成完整正文包。V18.2.7 在 V18.2.6 文案逻辑基准上优化 UI：新手默认只看推荐卡并一键确认，高级编辑折叠；主管可在预览区集中看标题、亮点、字数和导出风险。</div>", unsafe_allow_html=True)
+st.markdown("<div class='info-card'>新流程：①资料与事实卡 → ②ES标题确认 → ③AI预审多国标题 → ④绿色批量确认/黄色人工检查 → ⑤统一生成完整正文包。V18.2.8：保持新手截图流程，不新增上报卡；固定五点顺序；中文解释精简但完整；明确仿木/MDF才降级材质表达。</div>", unsafe_allow_html=True)
 
 # ------------------------- Section 1: input and facts -------------------------
 st.header("1）资料输入与产品事实卡")
@@ -3169,7 +3194,7 @@ if missing:
     st.warning("还有标题未确认：" + ", ".join(missing) + "。标题未确认前不建议生成正文。")
 else:
     include_aplus = True
-    st.markdown("<div class='ok'>正文将固定生成完整包：短标题 + 商品亮点 + 传统长标题参考 + 五点 + 描述 + Search Terms + A+。V18.2.7：只用事实卡+压缩母版+ES人工意图；默认生成完整中文解释，方便主管审核；正文不完整不会保存。</div>", unsafe_allow_html=True)
+    st.markdown("<div class='ok'>正文将固定生成完整包：短标题 + 商品亮点 + 传统长标题参考 + 五点 + 描述 + Search Terms + A+。V18.2.8：固定五点顺序模板；中文解释精简但完整；不新增上报卡；天然木/手工编织不过度纠结，明确仿木/MDF才降级。</div>", unsafe_allow_html=True)
     already_done = [l for l in selected_langs if is_listing_complete(st.session_state.get("listings", {}).get(l, {}))]
     incomplete_existing = [l for l in selected_langs if st.session_state.get("listings", {}).get(l) and not is_listing_complete(st.session_state.get("listings", {}).get(l, {}))]
     if already_done and st.session_state.get("skip_existing_listings", True):
@@ -3239,7 +3264,7 @@ if listings:
     st.download_button(
         "下载 ZIP（只含 listing）",
         data=make_zip(),
-        file_name=f"{st.session_state.get('sku','SKU')}_{date.today().isoformat()}_AMAZON_LISTING_V18_2_7.zip",
+        file_name=f"{st.session_state.get('sku','SKU')}_{date.today().isoformat()}_AMAZON_LISTING_V18_2_8.zip",
         mime="application/zip",
     )
 else:
